@@ -25,7 +25,7 @@ TELEGRAM_ENABLED = False  # Set to True to enable Telegram notifications
 # ========== SCRIPT SETTINGS ==========
 CHECK_INTERVAL = 2  # Check interval in seconds
 CONFIDENCE = 0.7    # Confidence level (DO NOT LOWER)
-RIGHT_CLICK_DELAY = 0.5  # Delay after right click
+RIGHT_CLICK_DELAY = 0.3  # Delay after right click
 SECOND_IMAGE_CONFIDENCE = 0.7  # Confidence for finding the second image
 GC_INTERVAL = 1000  # Run garbage collection every N iterations
 REPORT_INTERVAL = 60  # Send Telegram report every N seconds (60 = 1 minute)
@@ -33,7 +33,7 @@ STATUS_PRINT_INTERVAL = 50  # Print status every N iterations
 # =======================================
 
 # ========== TEST MODE SETTINGS ==========
-TEST_MODE = True  # Set to True to ONLY check and visualize, NOT click anything
+TEST_MODE = False  # Set to True to ONLY check and visualize, NOT click anything
 TEST_MODE_DELAY = 3  # Seconds to wait after each detection in test mode
 # =========================================
 
@@ -44,7 +44,9 @@ SKIP_PICK_PATTERNS = [
     r'POS',      # Contains POS
 ]
 USE_SIMPLE_TEXT_MATCH = False
-SKIP_PICK_TEXTS = []
+SKIP_PICK_TEXTS = [
+    'COMMIT', 'FINISH','START'
+]
 # ===========================================
 
 # ========== OCR REGION SETTINGS ==========
@@ -66,7 +68,7 @@ RED_THRESHOLD = 50
 # ===============================================
 
 # ========== VISUALIZATION SETTINGS ==========
-VISUALIZE_DEBUG = True
+VISUALIZE_DEBUG = False
 DEBUG_IMAGES_FOLDER = "debug_images"
 MAX_DEBUG_IMAGES = 100
 # ===========================================
@@ -85,6 +87,7 @@ last_report_time = time.time()
 report_counter = 0
 skip_count = 0
 detection_count = 0
+is_processing = False  # NEW: Flag to prevent concurrent processing
 
 def send_telegram_message(message):
     if not TELEGRAM_ENABLED:
@@ -231,6 +234,50 @@ def should_skip_by_pick_text(pick_text):
     
     return False, None
 
+def process_single_button():
+    """Process a single button from start to finish"""
+    global is_processing, skip_count, detection_count
+    
+    is_processing = True
+    
+    try:
+        finish_location, pick_text, should_skip, skip_reason = find_green_finish_button(FINISH_BUTTON_IMAGE, confidence=CONFIDENCE)
+        
+        if finish_location:
+            detection_count += 1
+            
+            if should_skip:
+                skip_count += 1
+                print(f"⏭️ SKIPPED (text: '{pick_text}')")
+                
+                if not TEST_MODE:
+                    press_ctrl_1()
+            else:
+                print(f"🎯 PROCESSING (text: '{pick_text}')")
+                
+                if not TEST_MODE:
+                    finish_center = pyautogui.center(finish_location)
+                    pyautogui.click(finish_center)
+                    print("✅ Double click performed")
+                    time.sleep(0.1)
+                    
+                    pyautogui.rightClick(finish_center)
+                    print("✅ Right click performed")
+                    time.sleep(RIGHT_CLICK_DELAY)
+                    
+                    # Wait for second image to appear and click it
+                    find_and_click_second_image(SECOND_IMAGE)
+            
+            if TEST_MODE:
+                time.sleep(TEST_MODE_DELAY)
+        else:
+            print(f"🔍 No green button found...")
+        
+    except Exception as e:
+        print(f"⚠️ Error in processing: {e}")
+    finally:
+        is_processing = False
+
 def find_green_finish_button(template_path, confidence=CONFIDENCE):
     screenshot = None
     all_locations = None
@@ -258,11 +305,9 @@ def find_green_finish_button(template_path, confidence=CONFIDENCE):
                 visualize_search_regions(location, region_coords, screenshot, pick_text, should_skip, skip_reason)
                 
                 if should_skip:
-                    global skip_count
-                    skip_count += 1
-                    print(f"⏭️ WOULD SKIP: {skip_reason}")
+                    print(f"⏭️ WILL SKIP: {skip_reason}")
                 else:
-                    print(f"🎯 WOULD PROCESS")
+                    print(f"🎯 WILL PROCESS")
                 
                 print(f"{'='*60}\n")
                 return location, pick_text, should_skip, skip_reason
@@ -283,15 +328,25 @@ def find_green_finish_button(template_path, confidence=CONFIDENCE):
             del all_locations
 
 def find_and_click_second_image(image_path, confidence=SECOND_IMAGE_CONFIDENCE):
-    try:
-        location = pyautogui.locateOnScreen(image_path, confidence=confidence)
-        if location:
-            center = pyautogui.center(location)
-            pyautogui.click(center)
-            print(f"✅ Second image clicked")
-            return True
-    except Exception as e:
-        print(f"⚠️ Error: {e}")
+    """Finds the second image on screen and left-clicks it"""
+    max_attempts = 5  # Try 5 times
+    for attempt in range(max_attempts):
+        try:
+            location = pyautogui.locateOnScreen(image_path, confidence=confidence)
+            if location:
+                center = pyautogui.center(location)
+                pyautogui.click(center)
+                print(f"✅ Second image clicked (attempt {attempt + 1})")
+                time.sleep(0.5)  # Wait after click
+                return True
+            else:
+                print(f"⏳ Waiting for second image... (attempt {attempt + 1}/{max_attempts})")
+                time.sleep(0.5)
+        except Exception as e:
+            print(f"⚠️ Error finding second image: {e}")
+            time.sleep(0.5)
+    
+    print(f"⚠️ Second image not found after {max_attempts} attempts")
     return False
 
 def press_ctrl_1():
@@ -329,38 +384,20 @@ iteration = 0
 detection_count = 0
 skip_count = 0
 start_time = time.time()
+is_processing = False  # Flag to prevent concurrent processing
 
 try:
     while True:
         iteration += 1
         current_time_str = datetime.now().strftime("%H:%M:%S")
         
-        finish_location, pick_text, should_skip, skip_reason = find_green_finish_button(FINISH_BUTTON_IMAGE, confidence=CONFIDENCE)
-        
-        if finish_location:
-            detection_count += 1
-            if should_skip:
-                skip_count += 1
-                print(f"[{current_time_str}] ⏭️ #{detection_count} - SKIPPED ('{pick_text}')")
-                
-                if not TEST_MODE:
-                    press_ctrl_1()
-            else:
-                print(f"[{current_time_str}] 🎯 #{detection_count} - PROCESS ('{pick_text}')")
-                
-                if not TEST_MODE:
-                    finish_center = pyautogui.center(finish_location)
-                    pyautogui.doubleClick(finish_center)
-                    time.sleep(0.3)
-                    pyautogui.rightClick(finish_center)
-                    time.sleep(RIGHT_CLICK_DELAY)
-                    find_and_click_second_image(SECOND_IMAGE)
-            
-            if TEST_MODE:
-                time.sleep(TEST_MODE_DELAY)
+        # Only start new processing if not already processing
+        if not is_processing:
+            process_single_button()
         else:
-            if iteration % 10 == 0:
-                print(f"[{current_time_str}] 🔍 No green button...")
+            # Wait if still processing previous button
+            print(f"[{current_time_str}] ⏳ Waiting for previous operation to complete...")
+            time.sleep(0.5)
         
         if iteration % STATUS_PRINT_INTERVAL == 0:
             uptime = time.time() - start_time
@@ -373,7 +410,10 @@ try:
         if iteration % GC_INTERVAL == 0:
             optimize_memory()
         
-        if not TEST_MODE:
+        # Wait before next check (if not in TEST_MODE with processing)
+        if not is_processing and not TEST_MODE:
+            time.sleep(CHECK_INTERVAL)
+        elif TEST_MODE and not is_processing:
             time.sleep(CHECK_INTERVAL)
         
 except KeyboardInterrupt:
