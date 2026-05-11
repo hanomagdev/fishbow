@@ -1,0 +1,8 @@
+pyautogui>=0.9.54
+pillow>=10.0.0
+pyscreeze>=0.1.29
+requests>=2.31.0
+easyocr>=1.7.0
+torch>=2.0.0
+torchvision>=0.15.0
+numpy>=1.24.0
