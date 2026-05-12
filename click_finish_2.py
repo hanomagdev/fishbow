@@ -23,7 +23,7 @@ TELEGRAM_ENABLED = False  # Set to True to enable Telegram notifications
 # =======================================
 
 # ========== SCRIPT SETTINGS ==========
-CHECK_INTERVAL = 2  # Check interval in seconds
+CHECK_INTERVAL = 0.5  # Check interval in seconds
 CONFIDENCE = 0.7    # Confidence level (DO NOT LOWER)
 RIGHT_CLICK_DELAY = 0.3  # Delay after right click
 SECOND_IMAGE_CONFIDENCE = 0.7  # Confidence for finding the second image
