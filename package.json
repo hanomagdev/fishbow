@@ -12,6 +12,7 @@
   "type": "module",
   "dependencies": {
     "dotenv": "^17.4.2",
+    "express": "^5.2.1",
     "node-fetch": "^3.3.2",
     "xml2js": "^0.6.2"
   }
