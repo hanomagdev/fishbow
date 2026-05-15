@@ -1,2 +1,6 @@
 node_modules
 .env
+debug_images
+fishbowl_errors.log
+shipments.log
+fishbowl_shipments.log
